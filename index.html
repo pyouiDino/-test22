@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Casino RP Manager — stable</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--muted:#94a3b8;--accent:#10b981;--danger:#ef4444}
+    *{box-sizing:border-box} body{font-family:Inter,system-ui, -apple-system, 'Segoe UI', Roboto, Arial;margin:0;background:#071126;color:#e6eef8}
+    .app{display:flex;min-height:100vh} aside{width:260px;padding:20px;border-right:1px solid rgba(255,255,255,0.03)} main{flex:1;padding:20px}
+    .btn{background:var(--accent);color:#021;padding:8px 12px;border-radius:8px;border:none;cursor:pointer}
+    .btn.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+    .card{background:var(--card);padding:12px;border-radius:10px;margin-bottom:12px;border:1px solid rgba(255,255,255,0.03)}
+    input,select{background:transparent;border:1px solid rgba(255,255,255,0.06);color:inherit;padding:8px;border-radius:8px;width:100%}
+    .grid{display:grid;gap:12px}.grid.cols-3{grid-template-columns:repeat(3,1fr)}
+    .muted{color:var(--muted)}.small{font-size:13px}.list{max-height:420px;overflow:auto}
+    .row{display:flex;gap:8px;align-items:center}.space{height:12px}.danger{color:var(--danger)}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <h1>Casino RP</h1>
+      <p class="muted small">Version : stable — débogage activé</p>
+      <div class="space"></div>
+      <div class="grid">
+        <button class="btn" data-view="dashboard">Tableau de bord</button>
+        <button class="btn secondary" data-view="closure">Clôture du jour</button>
+        <button class="btn secondary" data-view="employees">Employés</button>
+        <button class="btn secondary" data-view="history">Historique</button>
+        <button class="btn secondary" data-view="settings">Paramètres</button>
+      </div>
+      <div class="space"></div>
+      <div class="card small">
+        <div>Données : <span id="storage-status">—</span></div>
+        <div class="space"></div>
+        <button id="export-data" class="btn secondary">Exporter sauvegarde (JSON)</button>
+        <button id="import-data" class="btn secondary">Importer sauvegarde (JSON)</button>
+        <input id="import-file" type="file" accept="application/json" style="display:none" />
+      </div>
+    </aside>
+
+    <main>
+      <div id="content"></div>
+      <footer class="muted small">Prototype — données locales</footer>
+    </main>
+  </div>
+
+<script>
+/* ---------- UTIL ---------- */
+const LS_KEYS = { EMPLOYEES:'crpm_employees_v1', SETTINGS:'crpm_settings_v1', HISTORY:'crpm_history_v1' };
+const DEFAULT_SETTINGS = { reserveDefault:300000, coCeoName:'Co-PDG', ownerName:'Propriétaire' };
+function safeLoad(k, f){ try{ const r = localStorage.getItem(k); return r?JSON.parse(r): JSON.parse(JSON.stringify(f)); }catch(e){ console.error('load err',k,e); return JSON.parse(JSON.stringify(f)); } }
+function safeSave(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); updateStorageStatus(); }catch(e){ console.error('save err',k,e); alert('Impossible de sauvegarder.'); } }
+function updateStorageStatus(){ try{ document.getElementById('storage-status').innerText = (JSON.stringify(localStorage).length/1024).toFixed(1)+' KB'; }catch(e){} }
+function fmt(n){ return Number(n||0).toLocaleString('fr-FR') + ' €'; }
+function esc(s){ if(s===undefined||s===null) return ''; return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('\"','&quot;'); }
+
+let employees = safeLoad(LS_KEYS.EMPLOYEES, []);
+let settings = safeLoad(LS_KEYS.SETTINGS, DEFAULT_SETTINGS);
+let history = safeLoad(LS_KEYS.HISTORY, []);
+updateStorageStatus();
+
+const content = document.getElementById('content');
+let __lastReport = null;
+
+/* ---------- NAV ---------- */
+document.querySelectorAll('aside button[data-view]').forEach(b => b.addEventListener('click', ()=>setView(b.dataset.view)));
+document.getElementById('export-data').addEventListener('click', ()=>{
+  const blob = new Blob([JSON.stringify({employees,settings,history,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'});
+  const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='crpm_backup.json'; a.click(); URL.revokeObjectURL(url);
+});
+document.getElementById('import-data').addEventListener('click', ()=>document.getElementById('import-file').click());
+document.getElementById('import-file').addEventListener('change', async (e)=>{
+  try{
+    const f = e.target.files[0]; if(!f) return;
+    const text = await f.text(); const p = JSON.parse(text);
+    if(Array.isArray(p.employees)) employees = p.employees;
+    if(p.settings) settings = p.settings;
+    if(Array.isArray(p.history)) history = p.history;
+    safeSave(LS_KEYS.EMPLOYEES, employees); safeSave(LS_KEYS.SETTINGS, settings); safeSave(LS_KEYS.HISTORY, history);
+    alert('Import OK'); setView('dashboard');
+  }catch(err){ console.error(err); alert('Fichier JSON invalide'); }
+});
+
+function setView(v){ try{ if(v==='dashboard') renderDashboard(); else if(v==='closure') renderClosure(); else if(v==='employees') renderEmployees(); else if(v==='history') renderHistory(); else if(v==='settings') renderSettings(); }catch(e){ console.error('setView error',e); alert('Erreur interne, regarde la console (F12).'); }}
+
+/* ---------- HELPERS TOTAUX ---------- */
+function totalOwner(){ return history.reduce((a,h)=>a + Number(h.ownerShare||0),0); }
+function totalCo(){ return history.reduce((a,h)=>a + Number(h.coCeoShare||0),0); }
+function totalReserve(){ return history.reduce((a,h)=>a + Number(h.reserveKept||0),0); }
+
+/* ---------- DASHBOARD ---------- */
+function renderDashboard(){
+  try{
+    content.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <h2>Tableau de bord</h2><div class="space"></div>
+      <div class="grid cols-3">
+        <div class="card"><div class="muted small">Total ${esc(settings.ownerName)}</div><div style="font-weight:700">${fmt(totalOwner())}</div></div>
+        <div class="card"><div class="muted small">${esc(settings.coCeoName)}</div><div style="font-weight:700">${fmt(totalCo())}</div></div>
+        <div id="db-financial-card" class="card" style="cursor:pointer">
+          <div class="muted small">Disponibilité (revenu - réserve) — <span class="small">(clique pour détails)</span></div>
+          <div id="db-total-available" style="margin-top:12px;font-size:20px;font-weight:700">...</div>
+          <div id="db-details" style="display:none;margin-top:10px;border-top:1px dashed rgba(255,255,255,0.04);padding-top:8px;font-size:13px;color:var(--muted)">
+            <div><strong>Détails</strong></div>
+            <div style="margin-top:8px">Revenus totaux : <strong id="db-total-revenue">...</strong></div>
+            <div>Salaires payés : <strong id="db-total-salaries">...</strong></div>
+            <div>Bénéfices (distribués + salaires) : <strong id="db-total-benefits">...</strong></div>
+            <div style="margin-top:6px">Disponibilité (revenu - réserve) : <strong id="db-total-available-detail">...</strong></div>
+            <div id="db-detail-list" style="margin-top:8px"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="space"></div>
+      <div class="card"><h3>Employés actifs</h3><div class="list" id="dash-employees"></div></div>
+
+      <div class="space"></div>
+      <div class="card">
+        <h3>Relevés</h3><div class="space"></div>
+        <div class="row" style="gap:10px;align-items:center">
+          <button id="weekly-report-btn" class="btn secondary">Relevé semaine</button>
+          <button id="monthly-report-btn" class="btn secondary">Relevé mois</button>
+          <button id="export-report-csv" class="btn secondary">Exporter CSV</button>
+        </div><div class="space"></div>
+        <div id="report-output" class="small muted">Clique sur un bouton pour générer un relevé résumé en bas.</div>
+      </div>
+    `;
+    content.appendChild(wrap);
+
+    // employees list
+    const list = document.getElementById('dash-employees'); list.innerHTML = '';
+    employees.filter(e=>e.active).forEach(e=>{
+      const r = document.createElement('div'); r.className='row card'; r.style.justifyContent='space-between';
+      r.innerHTML = `<div><strong>${esc(e.name)}</strong><div class="muted small">${esc(e.role)}</div></div><div>${fmt(e.totalEarned||0)}</div>`;
+      list.appendChild(r);
+    });
+
+    // totals
+    const totalRevenue = history.reduce((a,h)=>a + Number(h.totalCash||0),0);
+    const totalSalaries = history.reduce((a,h)=>a + Number(h.totalSalaries||0),0);
+    const totalBenefits = totalOwner() + totalCo() + totalSalaries;
+    const reserveAccum = totalReserve();
+    const available = Math.max(totalRevenue - reserveAccum, 0);
+
+    document.getElementById('db-total-available').innerText = fmt(available);
+    document.getElementById('db-total-revenue').innerText = fmt(totalRevenue);
+    document.getElementById('db-total-salaries').innerText = fmt(totalSalaries);
+    document.getElementById('db-total-benefits').innerText = fmt(totalBenefits);
+    document.getElementById('db-total-available-detail').innerText = fmt(available);
+
+    const detailList = document.getElementById('db-detail-list');
+    if(detailList){
+      if(!history || history.length===0) detailList.innerHTML = '<div>Aucune clôture enregistrée.</div>';
+      else detailList.innerHTML = history.map(h=>{
+        const d = new Date(h.date).toLocaleDateString(); const r = Number(h.totalCash||0); const s = Number(h.totalSalaries||0);
+        const dist = (Number(h.ownerShare)||0) + (Number(h.coCeoShare)||0);
+        const ben = dist + s;
+        return `<div style="margin-bottom:6px">${d} — Revenu: ${fmt(r)} | Salaires: ${fmt(s)} | Bénéfices: ${fmt(ben)}</div>`;
+      }).join('');
+    }
+
+    // toggle details
+    const card = document.getElementById('db-financial-card');
+    if(card){
+      card.addEventListener('click', ()=>{
+        try{ const d = document.getElementById('db-details'); if(!d) return; d.style.display = (d.style.display==='block')? 'none':'block'; }catch(e){console.error(e);}
+      });
+    }
+
+    // Relevés (benefits include salaries)
+    function weekKey(dateStr){ const d = new Date(dateStr); if(isNaN(d)) return 'unknown'; const day = (d.getDay()+6)%7; d.setDate(d.getDate()-day); return d.toISOString().slice(0,10); }
+    function monthKey(dateStr){ const d = new Date(dateStr); if(isNaN(d)) return 'unknown'; return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
+
+    function computeWeeklySummary(){
+      const map = {};
+      (history||[]).forEach(h=>{
+        const k = weekKey(h.date);
+        const revenue = Number(h.totalCash)||0;
+        const salaries = Number(h.totalSalaries)||0;
+        const distributions = (Number(h.ownerShare)||0) + (Number(h.coCeoShare)||0);
+        const benefits = distributions + salaries;
+        if(!map[k]) map[k] = { revenue:0, salaries:0, benefits:0, entries:0 };
+        map[k].revenue += revenue; map[k].salaries += salaries; map[k].benefits += benefits; map[k].entries++;
+      });
+      return Object.keys(map).sort().map(k=>({ period:k, ...map[k]}));
+    }
+
+    function computeMonthlySummary(){
+      const map = {};
+      (history||[]).forEach(h=>{
+        const k = monthKey(h.date);
+        const revenue = Number(h.totalCash)||0;
+        const salaries = Number(h.totalSalaries)||0;
+        const distributions = (Number(h.ownerShare)||0) + (Number(h.coCeoShare)||0);
+        const benefits = distributions + salaries;
+        if(!map[k]) map[k] = { revenue:0, salaries:0, benefits:0, entries:0 };
+        map[k].revenue += revenue; map[k].salaries += salaries; map[k].benefits += benefits; map[k].entries++;
+      });
+      return Object.keys(map).sort().map(k=>({ period:k, ...map[k]}));
+    }
+
+    function renderReport(data, title){
+      const out = document.getElementById('report-output'); if(!out) return;
+      if(!data||data.length===0){ out.innerHTML = '<div class="muted small">Aucun enregistrement pour cette période.</div>'; __lastReport=null; return; }
+      __lastReport = { title, rows: data };
+      out.innerHTML = `<div style="font-weight:600;margin-bottom:6px">${esc(title)}</div>` + data.map(d=>`<div style="margin-bottom:6px">${esc(d.period)} — Revenu: ${fmt(d.revenue)} | Salaires: ${fmt(d.salaries)} | Bénéfices: ${fmt(d.benefits)}</div>`).join('');
+    }
+
+    function exportReportCSV(){ if(!__lastReport){ alert('Génère d\\'abord un relevé.'); return; } const rows=[['Période','Revenu','Salaires','Bénéfices']]; __lastReport.rows.forEach(r=>rows.push([r.period, r.revenue, r.salaries, r.benefits])); const csv = rows.map(r=>r.map(c=>'\"'+String(c).replace(/\"/g,'\"\"')+'\"').join(',')).join('\\n'); const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download = (__lastReport.title.replace(/\\s+/g,'_')||'report') + '.csv'; a.click(); URL.revokeObjectURL(url); }
+
+    // attach buttons AFTER elements exist
+    setTimeout(()=>{
+      try{
+        const wb = document.getElementById('weekly-report-btn'); if(wb) wb.addEventListener('click', ()=> renderReport(computeWeeklySummary(), 'Relevé hebdomadaire'));
+        const mb = document.getElementById('monthly-report-btn'); if(mb) mb.addEventListener('click', ()=> renderReport(computeMonthlySummary(), 'Relevé mensuel'));
+        const exb = document.getElementById('export-report-csv'); if(exb) exb.addEventListener('click', exportReportCSV);
+      }catch(e){ console.error('attach report buttons err',e); }
+    }, 50);
+
+  }catch(e){ console.error('renderDashboard error', e); content.innerHTML = '<div class="danger">Erreur d\\'affichage du tableau de bord — voir console.</div>'; }
+}
+
+/* ---------- CLOSURE (robuste) ---------- */
+function renderClosure(){
+  try{
+    content.innerHTML = ''; const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <h2>Clôture du jour</h2><div class="space"></div>
+      <div class="grid" style="grid-template-columns:1fr 420px;gap:12px">
+        <div>
+          <div class="card">
+            <label class="small muted">Total caisse du jour</label>
+            <input id="totalCash" type="number" value="2000000">
+            <div class="space"></div>
+            <label class="small muted">Réserve pour demain</label>
+            <input id="reserve" type="number" value="${settings.reserveDefault}">
+            <div class="space"></div>
+            <label class="small muted">Priorité en cas de manque</label>
+            <select id="priority"><option value="reserve">Priorité: Réserve</option><option value="salaries">Priorité: Salaires</option></select>
+          </div>
+
+          <div class="card">
+            <h3>Saisir salaires par employé</h3>
+            <div id="salary-list" class="list"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <h3>Aperçu</h3>
+            <div id="preview"></div>
+            <div class="space"></div>
+            <div class="row"><button id="confirmClosure" class="btn">Confirmer la clôture et enregistrer</button><button id="resetSalaries" class="btn secondary">Réinitialiser</button></div>
+          </div>
+        </div>
+      </div>
+    `;
+    content.appendChild(wrap);
+
+    // populate inputs
+    const salaryList = document.getElementById('salary-list'); salaryList.innerHTML='';
+    employees.filter(e=>e.active).forEach(e=>{
+      const row = document.createElement('div'); row.className='card salary-row'; row.dataset.empid = e.id;
+      row.innerHTML = `<div style="display:flex;justify-content:space-between"><div><strong>${esc(e.name)}</strong><div class="muted small">${esc(e.role)}</div></div><div style="width:140px"><input class="salary-input" data-empid="${e.id}" type="number" placeholder="0"></div></div>`;
+      salaryList.appendChild(row);
+    });
+
+    // gather salaries safely
+    function gatherSalaries(){ try{ return Array.from(document.querySelectorAll('.salary-input')).map(i=>({ id: i.dataset.empid, amount: Math.max(0, Number(i.value||0)), name: (employees.find(x=>String(x.id)===i.dataset.empid)||{}).name })); }catch(e){ console.error('gatherSalaries', e); return []; } }
+
+    // compute preview (with negative distribution split on owner & co)
+    function computePreview(){
+      try{
+        const totalCash = Number(document.getElementById('totalCash').value||0);
+        const reserve = Number(document.getElementById('reserve').value||0);
+        const priority = document.getElementById('priority').value;
+        const salaries = gatherSalaries(); const totalSalaries = salaries.reduce((a,b)=>a+b.amount,0);
+        const afterReserve = totalCash - reserve;
+        let remainder = afterReserve - totalSalaries;
+        let ownerShare = 0, coCeoShare = 0;
+
+        if(remainder >= 0){
+          ownerShare = Math.floor(remainder/2);
+          coCeoShare = remainder - ownerShare;
+        } else {
+          // déficit -> prélèvement sur propriétaires (enregistre valeurs négatives)
+          const deficit = Math.abs(remainder);
+          ownerShare = -Math.ceil(deficit/2);
+          coCeoShare = -Math.floor(deficit/2);
+        }
+        return { totalSalaries, remainder, ownerShare, coCeoShare, afterReserve };
+      }catch(e){ console.error('computePreview error', e); return { totalSalaries:0, remainder:0, ownerShare:0, coCeoShare:0, afterReserve:0 }; }
+    }
+
+    function refreshPreview(){
+      try{
+        const p = computePreview();
+        const preview = document.getElementById('preview');
+        preview.innerHTML = `<div>Total salaires: <strong>${fmt(p.totalSalaries)}</strong></div>
+          <div>Après réserve: <strong>${fmt(p.afterReserve)}</strong></div>
+          <div style="margin-top:6px">Reste à partager: <strong>${fmt(p.remainder>0?p.remainder:0)}</strong></div>
+          <div>Toi: <strong>${fmt(p.ownerShare)}</strong> — ${esc(settings.coCeoName)}: <strong>${fmt(p.coCeoShare)}</strong></div>`;
+        if(p.remainder < 0) preview.innerHTML += `<div class="danger small">Attention : fonds insuffisants — prélèvement automatique sur le propriétaire et le co-PDG.</div>`;
+      }catch(e){ console.error('refreshPreview error', e); }
+    }
+
+    // Use event delegation for salary inputs: listen on container
+    const container = document.getElementById('content');
+    // remove possible previous delegated listener to avoid duplicates
+    if(container._salaryDelegated) container.removeEventListener('input', container._salaryDelegated);
+    const salaryDelegated = function(e){
+      if(!e) return;
+      const el = e.target;
+      if(el && el.classList && el.classList.contains('salary-input')) refreshPreview();
+    };
+    container.addEventListener('input', salaryDelegated);
+    container._salaryDelegated = salaryDelegated;
+
+    // other listeners
+    const totalCashEl = document.getElementById('totalCash'); if(totalCashEl) totalCashEl.addEventListener('input', refreshPreview);
+    const reserveEl = document.getElementById('reserve'); if(reserveEl) reserveEl.addEventListener('input', refreshPreview);
+    const priorityEl = document.getElementById('priority'); if(priorityEl) priorityEl.addEventListener('change', refreshPreview);
+
+    const resetBtn = document.getElementById('resetSalaries'); if(resetBtn) resetBtn.addEventListener('click', ()=>{ document.querySelectorAll('.salary-input').forEach(i=>i.value=''); refreshPreview(); });
+    refreshPreview();
+
+    const confirmBtn = document.getElementById('confirmClosure');
+    if(confirmBtn){
+      confirmBtn.addEventListener('click', ()=> {
+        try{
+          if(!confirm('Confirmer la clôture ?')) return;
+          const totalCash = Number(document.getElementById('totalCash').value||0);
+          const reserve = Number(document.getElementById('reserve').value||0);
+          const salaries = gatherSalaries().filter(s=>s.amount>0);
+          const p = computePreview();
+          const entry = { id: Date.now(), date: new Date().toISOString(), totalCash, reserveKept: reserve, salaries, totalSalaries: p.totalSalaries, ownerShare: p.ownerShare, coCeoShare: p.coCeoShare, priority: document.getElementById('priority').value };
+          // update employees
+          employees = employees.map(e=>{ const s = salaries.find(x=>String(x.id)===String(e.id)); return s?{...e, totalEarned: (e.totalEarned||0) + s.amount}: e; });
+          history.unshift(entry);
+          safeSave(LS_KEYS.EMPLOYEES, employees); safeSave(LS_KEYS.HISTORY, history);
+          alert('Clôture enregistrée.');
+          setView('history');
+        }catch(err){ console.error('confirmClosure err', err); alert('Erreur lors de la sauvegarde, voir console.'); }
+      });
+    }
+
+  }catch(e){ console.error('renderClosure error', e); content.innerHTML = '<div class="danger">Erreur d\\'affichage (Clôture) — voir console.</div>'; }
+}
+
+/* ---------- EMPLOYEES ---------- */
+function renderEmployees(){
+  try{
+    content.innerHTML = ''; const wrap = document.createElement('div');
+    wrap.innerHTML = `<h2>Employés</h2><div class="space"></div>
+      <div class="card"><h3>Ajouter un employé</h3><div class="row"><input id="emp-name" placeholder="Nom"><input id="emp-role" placeholder="Rôle"><button id="emp-add" class="btn">Ajouter</button></div></div>
+      <div class="space"></div><div id="emp-list" class="list"></div>`;
+    content.appendChild(wrap);
+    document.getElementById('emp-add').addEventListener('click', ()=>{
+      const name = document.getElementById('emp-name').value.trim(); const role = document.getElementById('emp-role').value.trim()||'Employé';
+      if(!name){ alert('Nom requis'); return; }
+      const emp = { id: Date.now(), name, role, totalEarned:0, active:true }; employees.unshift(emp); safeSave(LS_KEYS.EMPLOYEES, employees); document.getElementById('emp-name').value=''; document.getElementById('emp-role').value=''; renderEmployees();
+    });
+
+    const list = document.getElementById('emp-list'); list.innerHTML = '';
+    employees.forEach(e=>{
+      const d = document.createElement('div'); d.className='card';
+      d.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><div><strong>${esc(e.name)}</strong><div class="muted small">${esc(e.role)}</div></div><div style="text-align:right"><div>${fmt(e.totalEarned||0)}</div><div class="small muted">${e.active? 'Actif':'Licencié'}</div></div></div><div class="space"></div><div class="row"><button class="btn" data-pay='${e.id}'>Paiement immédiat</button><button class="btn secondary" data-fire='${e.id}'>Licencier</button><button class="btn secondary" data-edit='${e.id}'>Modifier</button></div>`;
+      list.appendChild(d);
+    });
+
+    // actions (delegation)
+    list.querySelectorAll('[data-pay]').forEach(btn=>btn.addEventListener('click', function(){ const id=this.dataset.pay; const emp = employees.find(x=>String(x.id)===id); const vl = prompt('Combien veux-tu donner à '+(emp?emp.name:'?')+' ?', '0'); if(vl===null) return; const n = Number(String(vl).replace(/[\\s€]/g,'').replace(',','.'))||0; if(!n || n<=0) return alert('Montant invalide'); employees = employees.map(x=>String(x.id)===id?{...x, totalEarned:(x.totalEarned||0)+n}:x); safeSave(LS_KEYS.EMPLOYEES, employees); renderEmployees(); }));
+    list.querySelectorAll('[data-fire]').forEach(btn=>btn.addEventListener('click', function(){ const id=this.dataset.fire; if(!confirm('Licencier cet employé ?')) return; employees = employees.map(x=>String(x.id)===id?{...x, active:false}:x); safeSave(LS_KEYS.EMPLOYEES, employees); renderEmployees(); }));
+    list.querySelectorAll('[data-edit]').forEach(btn=>btn.addEventListener('click', function(){ const id=this.dataset.edit; const e = employees.find(x=>String(x.id)===id); const nm = prompt('Modifier le nom', e.name); const rl = prompt('Modifier le rôle', e.role); if(nm) e.name=nm; if(rl) e.role=rl; safeSave(LS_KEYS.EMPLOYEES, employees); renderEmployees(); }));
+  }catch(e){ console.error('renderEmployees error', e); content.innerHTML = '<div class="danger">Erreur (Employés) — voir console.</div>'; }
+}
+
+/* ---------- HISTORY ---------- */
+function renderHistory(){
+  try{
+    content.innerHTML = ''; const wrap = document.createElement('div');
+    wrap.innerHTML = `<h2>Historique</h2><div class="space"></div><div class="row"><button id="expCSV" class="btn">Exporter CSV</button><button id="clearHist" class="btn secondary">Vider l'historique</button></div><div class="space"></div><div id="hist-list"></div>`;
+    content.appendChild(wrap);
+
+    document.getElementById('expCSV').addEventListener('click', ()=>{ const rows=[['id','date','totalCash','reserveKept','totalSalaries','ownerShare','coCeoShare','priority','salaries']]; history.forEach(h=> rows.push([h.id,h.date,h.totalCash,h.reserveKept,h.totalSalaries,h.ownerShare,h.coCeoShare,h.priority,(h.salaries||[]).map(s=>s.name+':'+s.amount).join('|')])); const csv = rows.map(r=>r.map(c=>'\"'+String(c).replace(/\"/g,'\"\"')+'\"').join(',')).join('\\n'); const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='crpm_history.csv'; a.click(); URL.revokeObjectURL(url); });
+    document.getElementById('clearHist').addEventListener('click', ()=>{ if(!confirm('Supprimer tout l\\'historique ?')) return; history=[]; safeSave(LS_KEYS.HISTORY, history); renderHistory(); });
+
+    const list = document.getElementById('hist-list'); list.innerHTML = '';
+    history.forEach(h=>{
+      const d = document.createElement('div'); d.className='card';
+      d.innerHTML = `<div style="display:flex;justify-content:space-between"><div><strong>${new Date(h.date).toLocaleString()}</strong><div class="muted small">Caisse: ${fmt(h.totalCash)} — Réserve: ${fmt(h.reserveKept)}</div></div><div style="text-align:right">Toi: <strong>${fmt(h.ownerShare)}</strong><div>${esc(settings.coCeoName)}: <strong>${fmt(h.coCeoShare)}</strong></div></div></div>`;
+      if(h.salaries && h.salaries.length){ const ul = document.createElement('div'); ul.className='small'; ul.style.marginTop='8px'; ul.innerHTML = '<strong>Détails salaires:</strong>'; h.salaries.forEach(s=>{ const li=document.createElement('div'); li.className='small'; li.textContent = s.name + ' — ' + fmt(s.amount); ul.appendChild(li); }); d.appendChild(ul); }
+      list.appendChild(d);
+    });
+  }catch(e){ console.error('renderHistory error', e); content.innerHTML = '<div class="danger">Erreur (Historique) — voir console.</div>'; }
+}
+
+/* ---------- SETTINGS ---------- */
+function renderSettings(){
+  try{
+    content.innerHTML = ''; const wrap = document.createElement('div');
+    wrap.innerHTML = `<h2>Paramètres</h2><div class="space"></div><div class="card"><label class="muted small">Nom du propriétaire</label><input id="ownerName" value="${esc(settings.ownerName||'Propriétaire')}"><div class="space"></div><label class="muted small">Réserve par défaut</label><input id="tmpReserve" type="number" value="${settings.reserveDefault}"><div class="space"></div><label class="muted small">Nom du co-PDG</label><input id="tmpCo" value="${esc(settings.coCeoName)}"><div class="space"></div><div class="row"><button id="saveSettings" class="btn">Sauvegarder</button><button id="resetSettings" class="btn secondary">Annuler</button></div><div class="space"></div><div class="row"><button id="clearAll" class="btn secondary">Supprimer toutes les données</button><button id="resetAll" class="btn secondary">Réinitialiser tout</button></div></div>`;
+    content.appendChild(wrap);
+
+    document.getElementById('saveSettings').addEventListener('click', ()=>{ settings.ownerName = document.getElementById('ownerName').value||'Propriétaire'; settings.reserveDefault = Number(document.getElementById('tmpReserve').value||0); settings.coCeoName = document.getElementById('tmpCo').value||'Co-PDG'; safeSave(LS_KEYS.SETTINGS, settings); alert('Paramètres sauvegardés'); });
+    document.getElementById('resetSettings').addEventListener('click', ()=> renderSettings());
+    document.getElementById('clearAll').addEventListener('click', ()=>{ if(!confirm('Supprimer toutes les données (employés,historique, paramètres) ?')) return; employees=[]; history=[]; settings=JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); safeSave(LS_KEYS.EMPLOYEES, employees); safeSave(LS_KEYS.HISTORY, history); safeSave(LS_KEYS.SETTINGS, settings); alert('Données supprimées'); setView('dashboard'); });
+    document.getElementById('resetAll').addEventListener('click', ()=>{ if(!confirm('Réinitialiser tout ?')) return; employees=[]; history=[]; settings=JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); safeSave(LS_KEYS.EMPLOYEES, employees); safeSave(LS_KEYS.HISTORY, history); safeSave(LS_KEYS.SETTINGS, settings); alert('Réinitialisation'); setView('dashboard'); });
+  }catch(e){ console.error('renderSettings error', e); content.innerHTML = '<div class="danger">Erreur (Paramètres) — voir console.</div>'; }
+}
+
+/* ---------- Start ---------- */
+setView('dashboard');
+</script>
+</body>
+</html>
