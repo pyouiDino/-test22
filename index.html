@@ -54,7 +54,9 @@
   </div>  <script>
     const CARDS=['Dame','Roi','Valet','As'];
     const minBet=1000;
-    let playing=false;let topCard=null;let currentBet=0;
+    let playing=false;
+    let topCard=null;
+    let currentBet=0;
 
     const betEl=document.getElementById('bet');
     const msg=document.getElementById('msg');
@@ -67,14 +69,20 @@
       if(val<minBet){msg.textContent=`La mise minimale est ${minBet}.`;return;}
       currentBet=val;
       topCard=CARDS[Math.floor(Math.random()*CARDS.length)];
-      playing=true;msg.textContent='Choisis ta carte !';
-      topEl.className='hidden-card';topEl.textContent='Carte face cachée';
+      playing=true;
+      msg.textContent='Choisis ta carte !';
+      // La carte cachée reste toujours visible et animée
+      topEl.className='hidden-card';
+      topEl.textContent='Carte face cachée';
       toggleButtons(false);
     };
 
     resetBtn.onclick=()=>{
-      playing=false;msg.textContent='Jeu réinitialisé.';topCard=null;
-      topEl.className='hidden-card';topEl.textContent='Carte face cachée';
+      playing=false;
+      msg.textContent='Jeu réinitialisé.';
+      topCard=null;
+      topEl.className='hidden-card';
+      topEl.textContent='Carte face cachée';
       toggleButtons(true);
     };
 
@@ -82,15 +90,17 @@
       const btn=e.target.closest('.card');
       if(!btn||!playing)return;
       const guess=btn.dataset.card;
-      topEl.className='revealed';topEl.textContent=topCard;
+      topEl.className='revealed';
+      topEl.textContent=topCard;
       if(guess===topCard){
         const gain=currentBet*2;
         msg.textContent=`Bravo 🎉 ! C'était ${topCard} ! Tu gagnes ${gain.toLocaleString()} !`;
       } else {
         msg.textContent=`Dommage 😅 C'était ${topCard}. Tu perds ${currentBet.toLocaleString()}.`;
       }
-      playing=false;toggleButtons(true);
-      // On ne fait plus disparaître la carte automatiquement
+      playing=false;
+      toggleButtons(true);
+      // La carte révélée reste visible jusqu'à redémarrage
     };
 
     function toggleButtons(disabled){
