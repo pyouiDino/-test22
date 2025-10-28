@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Devine la carte — Jeu multiplicateurs cumulés</title>
+  <title>Devine la carte — Jeu Multiplicateurs</title>
   <style>
     :root{--accent:#6366f1;--bg:#0f172a;--card:#1e293b;--text:#f8fafc}
     *{box-sizing:border-box;font-family:'Poppins',sans-serif;transition:all .3s ease}
@@ -74,7 +74,7 @@
       if(val<minBet){msg.textContent=`La mise minimale est ${minBet}.`;return;}
       initialBet=val;
       currentStep=0;
-      totalGain=0;
+      totalGain=initialBet*2; // première victoire correspond à ×2
       topCard=CARDS[Math.floor(Math.random()*CARDS.length)];
       playing=true;
       msg.textContent='Choisis ta carte !';
@@ -104,10 +104,9 @@
       topEl.className='revealed';
       topEl.textContent=topCard;
       if(guess===topCard){
-        totalGain=multipliers[currentStep]*initialBet;
         showMultiplierOptions();
       } else {
-        msg.textContent=`Dommage 😅 C'était ${topCard}. Tu perds ${initialBet.toLocaleString()}.`;
+        msg.textContent=`Dommage 😅 C'était ${topCard}. Tu perds la mise.`;
         multiplierDiv.innerHTML='';
         playing=false;
         toggleButtons(true);
@@ -116,9 +115,9 @@
 
     function showMultiplierOptions(){
       multiplierDiv.innerHTML='';
-      if(currentStep<multipliers.length){
-        const gainNext = multipliers[currentStep]*initialBet;
-        multiplierDiv.innerHTML=`<button onclick="attemptMultiplier()">Rejouer pour ×${multipliers[currentStep]} → ${gainNext.toLocaleString()}</button>`;
+      let nextGain = initialBet * (multipliers[currentStep]||multipliers[multipliers.length-1]);
+      if(currentStep<multipliers.length-1){
+        multiplierDiv.innerHTML=`<button onclick="attemptMultiplier()">Rejouer pour ×${multipliers[currentStep+1]} → ${nextGain.toLocaleString()}</button>`;
       }
       multiplierDiv.innerHTML+=`<button onclick="cashOut()">Encaisser ${totalGain.toLocaleString()}</button>`;
       msg.textContent=`Bravo ! Tu as gagné ${totalGain.toLocaleString()} ! Que veux-tu faire ?`;
@@ -130,8 +129,8 @@
       const chance=0.5;
       if(Math.random()<chance){
         currentStep++;
-        totalGain=multipliers[currentStep-1]*initialBet;
-        if(currentStep>=multipliers.length){
+        totalGain = initialBet * multipliers[currentStep];
+        if(currentStep>=multipliers.length-1){
           msg.textContent=`Incroyable ! Tu as atteint le maximum : ${totalGain.toLocaleString()} ! 🎉`;
           multiplierDiv.innerHTML='';
           return;
