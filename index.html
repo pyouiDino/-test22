@@ -90,6 +90,7 @@
         msg.textContent=`Dommage 😅 C'était ${topCard}. Tu perds ${currentBet.toLocaleString()}.`;
       }
       playing=false;toggleButtons(true);
+      // On ne fait plus disparaître la carte automatiquement
     };
 
     function toggleButtons(disabled){
