@@ -116,22 +116,22 @@
 
     function showMultiplierOptions(){
       multiplierDiv.innerHTML='';
-      let buttons='';
       if(currentStep<multipliers.length){
-        buttons+=`<button onclick="attemptMultiplier()">Rejouer pour ×${multipliers[currentStep]} → ${(multipliers[currentStep]*initialBet).toLocaleString()}</button>`;
+        const gainNext = multipliers[currentStep]*initialBet;
+        multiplierDiv.innerHTML=`<button onclick="attemptMultiplier()">Rejouer pour ×${multipliers[currentStep]} → ${gainNext.toLocaleString()}</button>`;
       }
-      buttons+=`<button onclick="cashOut()">Encaisser ${(totalGain).toLocaleString()}</button>`;
-      multiplierDiv.innerHTML=buttons;
+      multiplierDiv.innerHTML+=`<button onclick="cashOut()">Encaisser ${totalGain.toLocaleString()}</button>`;
       msg.textContent=`Bravo ! Tu as gagné ${totalGain.toLocaleString()} ! Que veux-tu faire ?`;
       playing=false;
       toggleButtons(true);
     }
 
     function attemptMultiplier(){
-      const chance=0.5; // 50% de réussite
+      const chance=0.5;
       if(Math.random()<chance){
         currentStep++;
-        if(currentStep>multipliers.length-1){
+        totalGain=multipliers[currentStep-1]*initialBet;
+        if(currentStep>=multipliers.length){
           msg.textContent=`Incroyable ! Tu as atteint le maximum : ${totalGain.toLocaleString()} ! 🎉`;
           multiplierDiv.innerHTML='';
           return;
