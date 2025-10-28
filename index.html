@@ -1,11 +1,10 @@
-
 <!doctype html>
 
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Devine la carte — Jeu avec multiplicateurs</title>
+  <title>Devine la carte — Jeu multiplicateurs fixes</title>
   <style>
     :root{--accent:#6366f1;--bg:#0f172a;--card:#1e293b;--text:#f8fafc}
     *{box-sizing:border-box;font-family:'Poppins',sans-serif;transition:all .3s ease}
@@ -55,12 +54,13 @@
 
   </div>  <script>
     const CARDS=['Dame','Roi','Valet','As'];
-    const multipliers=[1.5,2,3,4,5];
+    const multipliers=[2,3.5,5]; // Multiplicateurs fixes par rapport à la mise de départ
     const minBet=1000;
     let playing=false;
     let topCard=null;
     let initialBet=0;
     let currentStep=0;
+    let totalGain=0;
 
     const betEl=document.getElementById('bet');
     const msg=document.getElementById('msg');
@@ -74,6 +74,7 @@
       if(val<minBet){msg.textContent=`La mise minimale est ${minBet}.`;return;}
       initialBet=val;
       currentStep=0;
+      totalGain=0;
       topCard=CARDS[Math.floor(Math.random()*CARDS.length)];
       playing=true;
       msg.textContent='Choisis ta carte !';
@@ -87,6 +88,7 @@
       playing=false;
       topCard=null;
       initialBet=0;
+      totalGain=0;
       currentStep=0;
       msg.textContent='Jeu réinitialisé.';
       topEl.className='hidden-card';
@@ -102,10 +104,11 @@
       topEl.className='revealed';
       topEl.textContent=topCard;
       if(guess===topCard){
-        currentStep=0;
+        totalGain=multipliers[currentStep]*initialBet;
         showMultiplierOptions();
       } else {
         msg.textContent=`Dommage 😅 C'était ${topCard}. Tu perds ${initialBet.toLocaleString()}.`;
+        multiplierDiv.innerHTML='';
         playing=false;
         toggleButtons(true);
       }
@@ -114,42 +117,17 @@
     function showMultiplierOptions(){
       multiplierDiv.innerHTML='';
       let buttons='';
-      for(let i=currentStep;i<multipliers.length;i++){
-        const mult=multipliers[i];
-        buttons+=`<button onclick="attemptMultiplier(${i})">×${mult} → ${(initialBet*mult).toLocaleString()}</button>`;
+      if(currentStep<multipliers.length){
+        buttons+=`<button onclick="attemptMultiplier()">Rejouer pour ×${multipliers[currentStep]} → ${(multipliers[currentStep]*initialBet).toLocaleString()}</button>`;
       }
-      buttons+=`<button onclick="cashOut()">Encaisser ${(initialBet*multipliers[currentStep]).toLocaleString()}</button>`;
+      buttons+=`<button onclick="cashOut()">Encaisser ${(totalGain).toLocaleString()}</button>`;
       multiplierDiv.innerHTML=buttons;
-      msg.textContent=`Bravo ! Tu as gagné ${(initialBet*multipliers[currentStep]).toLocaleString()} ! Que veux-tu faire ?`;
+      msg.textContent=`Bravo ! Tu as gagné ${totalGain.toLocaleString()} ! Que veux-tu faire ?`;
       playing=false;
       toggleButtons(true);
     }
 
-    function attemptMultiplier(index){
-      const chance=0.5; // 50% réussite pour toutes les étapes
+    function attemptMultiplier(){
+      const chance=0.5; // 50% de réussite pour toutes les étapes
       if(Math.random()<chance){
-        currentStep=index+1;
-        if(currentStep>=multipliers.length){
-          msg.textContent=`Incroyable ! Tu as atteint le maximum : ${(initialBet*multipliers[multipliers.length-1]).toLocaleString()} ! 🎉`;
-          multiplierDiv.innerHTML='';
-          return;
-        }
-        showMultiplierOptions();
-      } else {
-        msg.textContent=`Oh non 😢 Tu as perdu tout le gain.`;
-        multiplierDiv.innerHTML='';
-      }
-    }
-
-    function cashOut(){
-      msg.textContent=`Tu as encaissé ${(initialBet*multipliers[currentStep]).toLocaleString()} ! 🏆`;
-      multiplierDiv.innerHTML='';
-    }
-
-    function toggleButtons(disabled){
-      document.querySelectorAll('.card').forEach(c=>{
-        c.classList.toggle('disabled',disabled);
-      });
-    }
-  </script></body>
-</html>
+        totalGain=m
