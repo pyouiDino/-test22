@@ -74,14 +74,8 @@
       if(val<minBet){msg.textContent=`La mise minimale est ${minBet}.`;return;}
       initialBet=val;
       currentStep=0;
-      totalGain=initialBet*2; // première victoire correspond à ×2
-      topCard=CARDS[Math.floor(Math.random()*CARDS.length)];
-      playing=true;
-      msg.textContent='Choisis ta carte !';
-      topEl.className='hidden-card';
-      topEl.textContent='Carte face cachée';
-      multiplierDiv.innerHTML='';
-      toggleButtons(false);
+      totalGain=initialBet*2;
+      prepareNewRound();
     };
 
     resetBtn.onclick=()=>{
@@ -96,6 +90,16 @@
       multiplierDiv.innerHTML='';
       toggleButtons(true);
     };
+
+    function prepareNewRound(){
+      topCard=CARDS[Math.floor(Math.random()*CARDS.length)];
+      playing=true;
+      msg.textContent='Choisis ta carte !';
+      topEl.className='hidden-card';
+      topEl.textContent='Carte face cachée';
+      multiplierDiv.innerHTML='';
+      toggleButtons(false);
+    }
 
     document.getElementById('choices').onclick=e=>{
       const btn=e.target.closest('.card');
@@ -115,9 +119,10 @@
 
     function showMultiplierOptions(){
       multiplierDiv.innerHTML='';
-      let nextGain = initialBet * (multipliers[currentStep]||multipliers[multipliers.length-1]);
       if(currentStep<multipliers.length-1){
-        multiplierDiv.innerHTML=`<button onclick="attemptMultiplier()">Rejouer pour ×${multipliers[currentStep+1]} → ${nextGain.toLocaleString()}</button>`;
+        const nextMultiplier = multipliers[currentStep+1];
+        const nextGain = initialBet * nextMultiplier;
+        multiplierDiv.innerHTML=`<button onclick="nextRound()">Rejouer pour ×${nextMultiplier} → ${nextGain.toLocaleString()}</button>`;
       }
       multiplierDiv.innerHTML+=`<button onclick="cashOut()">Encaisser ${totalGain.toLocaleString()}</button>`;
       msg.textContent=`Bravo ! Tu as gagné ${totalGain.toLocaleString()} ! Que veux-tu faire ?`;
@@ -125,30 +130,10 @@
       toggleButtons(true);
     }
 
-    function attemptMultiplier(){
-      const chance=0.5;
-      if(Math.random()<chance){
-        currentStep++;
-        totalGain = initialBet * multipliers[currentStep];
-        if(currentStep>=multipliers.length-1){
-          msg.textContent=`Incroyable ! Tu as atteint le maximum : ${totalGain.toLocaleString()} ! 🎉`;
-          multiplierDiv.innerHTML='';
-          return;
-        }
-        topCard=CARDS[Math.floor(Math.random()*CARDS.length)];
-        playing=true;
-        msg.textContent='Nouvelle carte ! Choisis ta carte.';
-        topEl.className='hidden-card';
-        topEl.textContent='Carte face cachée';
-        multiplierDiv.innerHTML='';
-        toggleButtons(false);
-      } else {
-        msg.textContent=`Oh non 😢 Tu as perdu tout le gain.`;
-        multiplierDiv.innerHTML='';
-        totalGain=0;
-        playing=false;
-        toggleButtons(true);
-      }
+    function nextRound(){
+      currentStep++;
+      totalGain = initialBet * multipliers[currentStep];
+      prepareNewRound();
     }
 
     function cashOut(){
