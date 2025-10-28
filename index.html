@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Devine la carte — Jeu multiplicateurs fixes</title>
+  <title>Devine la carte — Jeu multiplicateurs cumulés</title>
   <style>
     :root{--accent:#6366f1;--bg:#0f172a;--card:#1e293b;--text:#f8fafc}
     *{box-sizing:border-box;font-family:'Poppins',sans-serif;transition:all .3s ease}
@@ -54,7 +54,7 @@
 
   </div>  <script>
     const CARDS=['Dame','Roi','Valet','As'];
-    const multipliers=[2,3.5,5]; // Multiplicateurs fixes par rapport à la mise de départ
+    const multipliers=[2,3.5,5];
     const minBet=1000;
     let playing=false;
     let topCard=null;
@@ -128,6 +128,42 @@
     }
 
     function attemptMultiplier(){
-      const chance=0.5; // 50% de réussite pour toutes les étapes
+      const chance=0.5; // 50% de réussite
       if(Math.random()<chance){
-        totalGain=m
+        currentStep++;
+        if(currentStep>multipliers.length-1){
+          msg.textContent=`Incroyable ! Tu as atteint le maximum : ${totalGain.toLocaleString()} ! 🎉`;
+          multiplierDiv.innerHTML='';
+          return;
+        }
+        topCard=CARDS[Math.floor(Math.random()*CARDS.length)];
+        playing=true;
+        msg.textContent='Nouvelle carte ! Choisis ta carte.';
+        topEl.className='hidden-card';
+        topEl.textContent='Carte face cachée';
+        multiplierDiv.innerHTML='';
+        toggleButtons(false);
+      } else {
+        msg.textContent=`Oh non 😢 Tu as perdu tout le gain.`;
+        multiplierDiv.innerHTML='';
+        totalGain=0;
+        playing=false;
+        toggleButtons(true);
+      }
+    }
+
+    function cashOut(){
+      msg.textContent=`Tu as encaissé ${totalGain.toLocaleString()} ! 🏆`;
+      multiplierDiv.innerHTML='';
+      totalGain=0;
+      playing=false;
+      toggleButtons(true);
+    }
+
+    function toggleButtons(disabled){
+      document.querySelectorAll('.card').forEach(c=>{
+        c.classList.toggle('disabled',disabled);
+      });
+    }
+  </script></body>
+</html>
