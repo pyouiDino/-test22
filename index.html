@@ -1,10 +1,11 @@
+
 <!doctype html>
 
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Devine la carte — Jeu</title>
+  <title>Devine la carte — Jeu avec multiplicateurs</title>
   <style>
     :root{--accent:#6366f1;--bg:#0f172a;--card:#1e293b;--text:#f8fafc}
     *{box-sizing:border-box;font-family:'Poppins',sans-serif;transition:all .3s ease}
@@ -27,6 +28,7 @@
     @keyframes pulse{0%,100%{box-shadow:0 0 20px rgba(99,102,241,0.4)}50%{box-shadow:0 0 40px rgba(99,102,241,0.7)}}
     .revealed{background:linear-gradient(145deg,#f8fafc,#cbd5e1);color:#111;animation:none;transition:none;}
     .message{text-align:center;margin-top:25px;font-size:18px;min-height:30px;color:#cbd5e1}
+    .multiplier-buttons{display:flex;justify-content:center;gap:10px;margin-top:15px;flex-wrap:wrap}
   </style>
 </head>
 <body>
@@ -49,38 +51,47 @@
 </div>
 
 <div class="message" id="msg">Bienvenue ! Place ta mise et devine la carte du dessus.</div>
+<div class="multiplier-buttons" id="multipliers"></div>
 
   </div>  <script>
     const CARDS=['Dame','Roi','Valet','As'];
+    const multipliers=[1.5,2,3,4,5];
     const minBet=1000;
     let playing=false;
     let topCard=null;
-    let currentBet=0;
+    let initialBet=0;
+    let currentStep=0;
 
     const betEl=document.getElementById('bet');
     const msg=document.getElementById('msg');
     const topEl=document.getElementById('top');
     const startBtn=document.getElementById('start');
     const resetBtn=document.getElementById('reset');
+    const multiplierDiv=document.getElementById('multipliers');
 
     startBtn.onclick=()=>{
       const val=Math.floor(Number(betEl.value)||0);
       if(val<minBet){msg.textContent=`La mise minimale est ${minBet}.`;return;}
-      currentBet=val;
+      initialBet=val;
+      currentStep=0;
       topCard=CARDS[Math.floor(Math.random()*CARDS.length)];
       playing=true;
       msg.textContent='Choisis ta carte !';
       topEl.className='hidden-card';
       topEl.textContent='Carte face cachée';
+      multiplierDiv.innerHTML='';
       toggleButtons(false);
     };
 
     resetBtn.onclick=()=>{
       playing=false;
-      msg.textContent='Jeu réinitialisé.';
       topCard=null;
+      initialBet=0;
+      currentStep=0;
+      msg.textContent='Jeu réinitialisé.';
       topEl.className='hidden-card';
       topEl.textContent='Carte face cachée';
+      multiplierDiv.innerHTML='';
       toggleButtons(true);
     };
 
@@ -89,21 +100,55 @@
       if(!btn||!playing)return;
       const guess=btn.dataset.card;
       topEl.className='revealed';
-      topEl.textContent=topCard; // Affiche toujours la réponse
+      topEl.textContent=topCard;
       if(guess===topCard){
-        const gain=currentBet*2;
-        msg.textContent=`Bravo 🎉 ! C'était ${topCard} ! Tu gagnes ${gain.toLocaleString()} !`;
+        currentStep=0;
+        showMultiplierOptions();
       } else {
-        msg.textContent=`Dommage 😅 C'était ${topCard}. Tu perds ${currentBet.toLocaleString()}.`;
+        msg.textContent=`Dommage 😅 C'était ${topCard}. Tu perds ${initialBet.toLocaleString()}.`;
+        playing=false;
+        toggleButtons(true);
       }
+    };
+
+    function showMultiplierOptions(){
+      multiplierDiv.innerHTML='';
+      let buttons='';
+      for(let i=currentStep;i<multipliers.length;i++){
+        const mult=multipliers[i];
+        buttons+=`<button onclick="attemptMultiplier(${i})">×${mult} → ${(initialBet*mult).toLocaleString()}</button>`;
+      }
+      buttons+=`<button onclick="cashOut()">Encaisser ${(initialBet*multipliers[currentStep]).toLocaleString()}</button>`;
+      multiplierDiv.innerHTML=buttons;
+      msg.textContent=`Bravo ! Tu as gagné ${(initialBet*multipliers[currentStep]).toLocaleString()} ! Que veux-tu faire ?`;
       playing=false;
       toggleButtons(true);
-      // La carte révélée reste visible et ne disparaît jamais
-    };
+    }
+
+    function attemptMultiplier(index){
+      const chance=0.5; // 50% réussite pour toutes les étapes
+      if(Math.random()<chance){
+        currentStep=index+1;
+        if(currentStep>=multipliers.length){
+          msg.textContent=`Incroyable ! Tu as atteint le maximum : ${(initialBet*multipliers[multipliers.length-1]).toLocaleString()} ! 🎉`;
+          multiplierDiv.innerHTML='';
+          return;
+        }
+        showMultiplierOptions();
+      } else {
+        msg.textContent=`Oh non 😢 Tu as perdu tout le gain.`;
+        multiplierDiv.innerHTML='';
+      }
+    }
+
+    function cashOut(){
+      msg.textContent=`Tu as encaissé ${(initialBet*multipliers[currentStep]).toLocaleString()} ! 🏆`;
+      multiplierDiv.innerHTML='';
+    }
 
     function toggleButtons(disabled){
       document.querySelectorAll('.card').forEach(c=>{
-        c.classList.toggle('disabled',disabled&&!playing);
+        c.classList.toggle('disabled',disabled);
       });
     }
   </script></body>
